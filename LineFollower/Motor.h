@@ -1,14 +1,14 @@
-#ifndef ENGINE_H
-#define ENGINE_H
+#ifndef MOTOR_H
+#define MOTOR_H
 
 #define MIN_REAL_SPEED 138 //115
 #define MAX_REAL_SPEED 255
 #define REAL_SPEED_RANGE (MAX_REAL_SPEED - MIN_REAL_SPEED)
 
-class Engine
+class Motor
 {
 public:
-    Engine(const byte& pinIn1, const byte& pinIn2, const byte& pinEnable, const bool& invertedPins = false)
+    Motor(const byte& pinIn1, const byte& pinIn2, const byte& pinEnable, const bool& invertedPins = false)
     {
         _pinIn1 = pinIn1;
         _pinIn2 = pinIn2;
@@ -21,7 +21,7 @@ public:
         pinMode(_pinEnable, OUTPUT);
     }
 
-    ~Engine() {}
+    ~Motor() {}
     float getSpeed() const
     {
         return _speed;

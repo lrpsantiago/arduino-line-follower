@@ -6,8 +6,7 @@ class Calibration
 public:
     Calibration()
     {
-        _min = 1024;
-        _max = 0;
+        reset();
     }
 
     ~Calibration() {}
@@ -50,6 +49,12 @@ public:
         }
 
         _max = value;
+    }
+
+    void reset()
+    {
+        _min = 1023;
+        _max = 0;
     }
 
 private:

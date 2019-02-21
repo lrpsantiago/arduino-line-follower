@@ -19,7 +19,7 @@ private:
     AbstractMachine* _normalState;
     AbstractMachine* _turningState;
 
-    EnginePair* _engines;
+    MotorPair* _Motors;
 };
 
 #endif

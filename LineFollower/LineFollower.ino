@@ -1,5 +1,5 @@
-#include "EnginePair.h"
-#include "Calibration.h"
+#include <EEPROM.h>
+#include "MotorPair.h"
 #include "LdrSensor.h"
 #include "PidController.h"
 
@@ -11,18 +11,20 @@
 #define SENSOR_LEFT_END A4
 #define BUZZER_PIN 2
 #define CALIBRATING 0
-#define WANDERING 1
+#define FOLLOWING_LINE 1
 #define TURNING_L 2
 #define TURNING_R 3
 #define ROTATING_L 5
 #define ROTATING_R 6
 
-EnginePair* engines;
+PidController* pidControl;
+MotorPair* motors;
 int lastFrameTime;
 float stateTime = 5;
-int state = CALIBRATING;
-int sensorPins[SENSORS_COUNT] = { SENSOR_LEFT_END, SENSOR_LEFT, SENSOR_CENTER, SENSOR_RIGHT, SENSOR_RIGHT_END };
+byte state = CALIBRATING;
+byte sensorPins[SENSORS_COUNT] = { SENSOR_LEFT_END, SENSOR_LEFT, SENSOR_CENTER, SENSOR_RIGHT, SENSOR_RIGHT_END };
 LdrSensor* sensors[SENSORS_COUNT];
+float threshold[SENSORS_COUNT] = { 0.45, 0.45, 0.45, 0.45, 0.45 };
 bool currentSensorValues[SENSORS_COUNT] = { false, false, true, false, false };
 bool lastSensorValues[SENSORS_COUNT] = { false, false, true, false, false };
 bool programStarts = true;
@@ -30,8 +32,9 @@ float spd = 0.1f;
 
 void setup()
 {
-    engines = new EnginePair(4, 5, 6, 8, 9, 10, true);
-    engines->setBalance(0.1);
+    pidControl = new PidController(0, 0, 0);
+    motors = new MotorPair(4, 5, 6, 8, 9, 10, true);
+    motors->setBalance(0.1);
 
     for (int i = 0; i < SENSORS_COUNT; i++)
     {
@@ -51,52 +54,26 @@ void loop()
     auto delta = float(currentFrameTime - lastFrameTime) / 1000;
     stateTime -= delta;
 
-    if (state == CALIBRATING)
+    if (state != CALIBRATING)
     {
-        if (programStarts)
+        for (auto i = 0; i < SENSORS_COUNT; i++)
         {
-            Serial.println("Starting calibration...");
-            digitalWrite(BUZZER_PIN, HIGH);
-            delay(100);
-            digitalWrite(BUZZER_PIN, LOW);
-            programStarts = false;
+            auto value = sensors[i]->getNormalizedValue();
+            currentSensorValues[i] = value <= threshold[i];
+
+            Serial.print(currentSensorValues[i] ? "1" : "0");
+            Serial.print(" (");
+            Serial.print(value);
+            Serial.print(")\t");
         }
 
-        calibration();
-
-        if (stateTime <= 0)
-        {
-            Serial.println("End of calibration!");
-            digitalWrite(BUZZER_PIN, HIGH);
-            delay(100);
-            digitalWrite(BUZZER_PIN, LOW);
-            delay(50);
-            digitalWrite(BUZZER_PIN, HIGH);
-            delay(100);
-            digitalWrite(BUZZER_PIN, LOW);
-            state++;
-        }
-
-        lastFrameTime = currentFrameTime;
-        return;
+        Serial.println();
     }
-
-    for (auto i = 0; i < SENSORS_COUNT; i++)
-    {
-        auto value = sensors[i]->getNormalizedValue();
-        currentSensorValues[i] = value <= 0.45;
-
-        Serial.print(currentSensorValues[i] ? "1" : "0");
-        Serial.print(" (");
-        Serial.print(value);
-        Serial.print(")\t");
-    }
-
-    Serial.println();
 
     switch (state)
     {
-        case WANDERING: wandering(); break;
+        case CALIBRATING: calibrating(); break;
+        case FOLLOWING_LINE: followingLine(); break;
         case TURNING_L: turningLeft(); break;
         case TURNING_R: turningRight(); break;
         case ROTATING_L: rotatingLeft(); break;
@@ -112,98 +89,108 @@ void loop()
     lastFrameTime = currentFrameTime;
 }
 
-void calibration()
+void calibrating()
 {
+    if (programStarts)
+    {
+        Serial.println("Starting calibration...");
+        digitalWrite(BUZZER_PIN, HIGH);
+        delay(100);
+        digitalWrite(BUZZER_PIN, LOW);
+        programStarts = false;
+    }
+
     for (auto i = 0; i < SENSORS_COUNT; i++)
     {
         auto value = analogRead(sensorPins[i]);
         sensors[i]->calibrate(value);
     }
+
+    if (stateTime <= 0)
+    {
+        Serial.println("End of calibration!");
+        digitalWrite(BUZZER_PIN, HIGH);
+        delay(100);
+        digitalWrite(BUZZER_PIN, LOW);
+        delay(50);
+        digitalWrite(BUZZER_PIN, HIGH);
+        delay(100);
+        digitalWrite(BUZZER_PIN, LOW);
+        state = FOLLOWING_LINE;
+    }
 }
 
-void wandering()
+void followingLine()
 {
+    //detect 90º turns
+    //detect acute turns
+    //detect crossroad
+
     auto error = calculateError();
     auto normalizedError = float(error) / 4;
 
-    //engines->setBalance(-normalizedError);
-    //engines->forward(spd);
+    //motors->setBalance(-normalizedError);
+    //motors->forward(spd);
 
-    engines->slightTurnLeft(spd);
-    engines->updateMovement();
+    motors->setIndependentSpeed(1, 1);
+    motors->updateMovement();
 }
 
 void turningLeft()
 {
-    auto isRightBlack = currentSensorValues[1];
-    auto isCenterBlack = currentSensorValues[2];
-    auto isLeftBlack = currentSensorValues[3];
-
-    if ((!isLeftBlack && isCenterBlack && !isRightBlack)
-        || (!isLeftBlack && !isCenterBlack && isRightBlack)
-        || (isLeftBlack && !isCenterBlack && !isRightBlack))
+    if (checkCurrentSensors(0, 0, 1, 0, 0)
+        || checkCurrentSensors(0, 1, 0, 0, 0)
+        || checkCurrentSensors(0, 0, 0, 1, 0))
     {
-        state = WANDERING;
+        state = FOLLOWING_LINE;
         return;
     }
 
-    engines->turnLeft(spd);
-    engines->updateMovement();
+    motors->turnLeft(spd);
+    motors->updateMovement();
 }
 
 void turningRight()
 {
-    auto isRightBlack = currentSensorValues[1];
-    auto isCenterBlack = currentSensorValues[2];
-    auto isLeftBlack = currentSensorValues[3];
-
-    if ((!isLeftBlack && isCenterBlack && !isRightBlack)
-        || (!isLeftBlack && !isCenterBlack && isRightBlack)
-        || (isLeftBlack && !isCenterBlack && !isRightBlack))
+    if (checkCurrentSensors(0, 0, 1, 0, 0)
+        || checkCurrentSensors(0, 1, 0, 0, 0)
+        || checkCurrentSensors(0, 0, 0, 1, 0))
     {
-        state = WANDERING;
+        state = FOLLOWING_LINE;
         return;
     }
 
-    engines->turnRight(spd);
-    engines->updateMovement();
+    motors->turnRight(spd);
+    motors->updateMovement();
 }
 
 void rotatingLeft()
 {
-    auto isRightBlack = currentSensorValues[1];
-    auto isCenterBlack = currentSensorValues[2];
-    auto isLeftBlack = currentSensorValues[3];
-
-    if ((!isLeftBlack && isCenterBlack && !isRightBlack)
-        || (!isLeftBlack && !isCenterBlack && isRightBlack)
-        || (isLeftBlack && !isCenterBlack && !isRightBlack))
+    if (checkCurrentSensors(0, 0, 1, 0, 0)
+        || checkCurrentSensors(0, 1, 0, 0, 0)
+        || checkCurrentSensors(0, 0, 0, 1, 0))
     {
-        state = WANDERING;
+        state = FOLLOWING_LINE;
         return;
     }
 
-    engines->rotateRight(spd);
-    engines->updateMovement();
+    motors->rotateRight(spd);
+    motors->updateMovement();
 }
 
 
 void rotatingRight()
 {
-    auto isRightBlack = currentSensorValues[1];
-    auto isCenterBlack = currentSensorValues[2];
-    auto isLeftBlack = currentSensorValues[3];
-
-    if ((!isLeftBlack && isCenterBlack && !isRightBlack)
-        || (!isLeftBlack && !isCenterBlack && isRightBlack)
-        || (isLeftBlack && !isCenterBlack && !isRightBlack))
+    if (checkCurrentSensors(0, 0, 1, 0, 0)
+        || checkCurrentSensors(0, 1, 0, 0, 0)
+        || checkCurrentSensors(0, 0, 0, 1, 0))
     {
-        state = WANDERING;
+        state = FOLLOWING_LINE;
         return;
     }
 
-    engines->rotateRight(spd);
-    engines->updateMovement();
+    motors->rotateRight(spd);
+    motors->updateMovement();
 }
 
 bool checkCurrentSensors(const int& leftEnd, const int& left, const int& center, const int& right, const int& rightEnd)

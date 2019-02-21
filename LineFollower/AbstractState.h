@@ -3,10 +3,11 @@
 
 #include "StateMachine.h"
 
+template<class T>
 class AbstractState
 {
 public:
-    StateMachine(StateMachine* owner)
+    StateMachine(StateMachine<T>* owner)
     {
         _owner = owner;
     }
@@ -21,7 +22,7 @@ public:
     virtual void onLeave() {}
 
 private:
-    StateMachine* _owner;
+    StateMachine<T>* _owner;
 };
 
 #endif

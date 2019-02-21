@@ -3,7 +3,8 @@
 
 #include "AbstractState.h"
 
-class StateMachine
+template<class T>
+class StateMachine<T>
 {
 public:
     StateMachine() {}
@@ -40,7 +41,7 @@ public:
     }
 
 private:
-    AbstractState* _currentState;
+    AbstractState<T>* _currentState;
 };
 
 #endif
