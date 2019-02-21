@@ -6,39 +6,55 @@ class Calibration
 public:
     Calibration()
     {
-        _min = 0;
+        _min = 1024;
         _max = 0;
     }
 
     ~Calibration() {}
-    byte getMin() const
+
+    int getMin() const
     {
         return _min;
     }
-    byte getMax() const
+
+    int getMax() const
     {
         return _max;
     }
-    byte getRange() const
+
+    int getRange() const
     {
         return _max - _min;
     }
-    byte getNormalizedValue(const float& percentage) const
+
+    int getNormalizedValue(const float& percentage) const
     {
         return _min + trunc((float)getRange() * percentage);
     }
-    void setMin(const byte& value)
+
+    void setMin(const int& value)
     {
+        if (value >= _min)
+        {
+            return;
+        }
+
         _min = value;
     }
-    void setMax(const byte& value)
+
+    void setMax(const int& value)
     {
+        if (value <= _max)
+        {
+            return;
+        }
+
         _max = value;
     }
 
 private:
-    byte _min;
-    byte _max;
+    int _min;
+    int _max;
 };
 
 #endif
