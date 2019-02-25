@@ -2,6 +2,7 @@
 #include "MotorPair.h"
 #include "LdrSensor.h"
 #include "PidController.h"
+#include "Led.h"
 
 #define SENSORS_COUNT 5
 #define SENSOR_RIGHT_END A0
@@ -9,7 +10,14 @@
 #define SENSOR_CENTER A2
 #define SENSOR_LEFT A3
 #define SENSOR_LEFT_END A4
-#define BUZZER_PIN 2
+
+#define S_INDEX_LE 0
+#define S_INDEX_L 1
+#define S_INDEX_C 2
+#define S_INDEX_R 3
+#define S_INDEX_RE 4
+
+#define BUZZER_PIN 13
 #define CALIBRATING 0
 #define FOLLOWING_LINE 1
 #define TURNING_L 2
@@ -17,6 +25,7 @@
 #define ROTATING_L 5
 #define ROTATING_R 6
 
+Led* leds[5];
 PidController* pidControl;
 MotorPair* motors;
 int lastFrameTime;
@@ -24,17 +33,22 @@ float stateTime = 5;
 byte state = CALIBRATING;
 byte sensorPins[SENSORS_COUNT] = { SENSOR_LEFT_END, SENSOR_LEFT, SENSOR_CENTER, SENSOR_RIGHT, SENSOR_RIGHT_END };
 LdrSensor* sensors[SENSORS_COUNT];
-float threshold[SENSORS_COUNT] = { 0.45, 0.45, 0.45, 0.45, 0.45 };
+float threshold[SENSORS_COUNT] = { 0.5, 0.5, 0.5, 0.5, 0.5 }; //{ 0.88, 0.73, 0.68, 0.52, 0.3 };
 bool currentSensorValues[SENSORS_COUNT] = { false, false, true, false, false };
 bool lastSensorValues[SENSORS_COUNT] = { false, false, true, false, false };
 bool programStarts = true;
-float spd = 0.1f;
+float spd = 0.5;
 
 void setup()
 {
-    pidControl = new PidController(0, 0, 0);
-    motors = new MotorPair(4, 5, 6, 8, 9, 10, true);
-    motors->setBalance(0.1);
+    pidControl = new PidController(1, 0, 0);
+    motors = new MotorPair(1, 2, 3, 4, 5, 6, true);
+    motors->setBalance(-0.95);
+
+    for (int i = 0; i < 5; i++)
+    {
+        leds[i] = new Led(8 + i);
+    }
 
     for (int i = 0; i < SENSORS_COUNT; i++)
     {
@@ -65,6 +79,15 @@ void loop()
             Serial.print(" (");
             Serial.print(value);
             Serial.print(")\t");
+
+            if (currentSensorValues[i])
+            {
+                leds[i]->turnOn();
+            }
+            else
+            {
+                leds[i]->turnOff();
+            }
         }
 
         Serial.println();
@@ -102,7 +125,7 @@ void calibrating()
 
     for (auto i = 0; i < SENSORS_COUNT; i++)
     {
-        auto value = analogRead(sensorPins[i]);
+        auto value = sensors[i]->getValue();
         sensors[i]->calibrate(value);
     }
 
@@ -126,21 +149,31 @@ void followingLine()
     //detect acute turns
     //detect crossroad
 
-    auto error = calculateError();
-    auto normalizedError = float(error) / 4;
+    if (checkCurrentSensors(1, 1, 1, 0, 0))
+    {
+        state = TURNING_L;
+    }
+    else if (checkCurrentSensors(0, 0, 1, 1, 1))
+    {
+        state = TURNING_R;
+    }
+    else
+    {
+        auto error = calculateError();
+        auto normalizedError = float(error) / 4;
+        auto pid = pidControl->calculatePid(normalizedError);
 
-    //motors->setBalance(-normalizedError);
-    //motors->forward(spd);
+        motors->setDirection(pid);
+    }
 
-    motors->setIndependentSpeed(1, 1);
     motors->updateMovement();
 }
 
 void turningLeft()
 {
     if (checkCurrentSensors(0, 0, 1, 0, 0)
-        || checkCurrentSensors(0, 1, 0, 0, 0)
-        || checkCurrentSensors(0, 0, 0, 1, 0))
+        || checkCurrentSensors(0, 0, 0, 1, 0)
+        || checkCurrentSensors(0, 1, 0, 0, 0))
     {
         state = FOLLOWING_LINE;
         return;
@@ -153,8 +186,8 @@ void turningLeft()
 void turningRight()
 {
     if (checkCurrentSensors(0, 0, 1, 0, 0)
-        || checkCurrentSensors(0, 1, 0, 0, 0)
-        || checkCurrentSensors(0, 0, 0, 1, 0))
+        || checkCurrentSensors(0, 0, 0, 1, 0)
+        || checkCurrentSensors(0, 1, 0, 0, 0))
     {
         state = FOLLOWING_LINE;
         return;
@@ -167,14 +200,14 @@ void turningRight()
 void rotatingLeft()
 {
     if (checkCurrentSensors(0, 0, 1, 0, 0)
-        || checkCurrentSensors(0, 1, 0, 0, 0)
-        || checkCurrentSensors(0, 0, 0, 1, 0))
+        || checkCurrentSensors(0, 0, 0, 1, 0)
+        || checkCurrentSensors(0, 1, 0, 0, 0))
     {
         state = FOLLOWING_LINE;
         return;
     }
 
-    motors->rotateRight(spd);
+    motors->rotateLeft(spd);
     motors->updateMovement();
 }
 
@@ -182,8 +215,8 @@ void rotatingLeft()
 void rotatingRight()
 {
     if (checkCurrentSensors(0, 0, 1, 0, 0)
-        || checkCurrentSensors(0, 1, 0, 0, 0)
-        || checkCurrentSensors(0, 0, 0, 1, 0))
+        || checkCurrentSensors(0, 0, 0, 1, 0)
+        || checkCurrentSensors(0, 1, 0, 0, 0))
     {
         state = FOLLOWING_LINE;
         return;
@@ -195,20 +228,20 @@ void rotatingRight()
 
 bool checkCurrentSensors(const int& leftEnd, const int& left, const int& center, const int& right, const int& rightEnd)
 {
-    return currentSensorValues[4] == bool(leftEnd)
-           && currentSensorValues[3] == bool(left)
-           && currentSensorValues[2] == bool(center)
-           && currentSensorValues[1] == bool(right)
-           && currentSensorValues[0] == bool(rightEnd);
+    return currentSensorValues[S_INDEX_LE] == bool(leftEnd)
+           && currentSensorValues[S_INDEX_L] == bool(left)
+           && currentSensorValues[S_INDEX_C] == bool(center)
+           && currentSensorValues[S_INDEX_R] == bool(right)
+           && currentSensorValues[S_INDEX_RE] == bool(rightEnd);
 }
 
 bool checkLastSensors(const int& leftEnd, const int& left, const int& center, const int& right, const int& rightEnd)
 {
-    return lastSensorValues[4] == bool(leftEnd)
-           && lastSensorValues[3] == bool(left)
-           && lastSensorValues[2] == bool(center)
-           && lastSensorValues[1] == bool(right)
-           && lastSensorValues[0] == bool(rightEnd);
+    return lastSensorValues[S_INDEX_LE] == bool(leftEnd)
+           && lastSensorValues[S_INDEX_L] == bool(left)
+           && lastSensorValues[S_INDEX_C] == bool(center)
+           && lastSensorValues[S_INDEX_R] == bool(right)
+           && lastSensorValues[S_INDEX_RE] == bool(rightEnd);
 }
 
 int calculateError()
@@ -228,6 +261,10 @@ int calculateError()
     else if (checkCurrentSensors(0, 0, 0, 1, 1))
     {
         return 3;
+    }
+    else if (checkCurrentSensors(0, 0, 0, 0, 1))
+    {
+        return 4;
     }
     else if (checkCurrentSensors(0, 1, 1, 0, 0))
     {

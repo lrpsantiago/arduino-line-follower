@@ -7,8 +7,7 @@ public:
     PidController(const int& kp, const int& ki, const int& kd)
         : _kp(kp), _ki(ki), _kd(kd)
     {
-        _errorSum = 0;
-        _lastError = 0;
+        reset();
     }
 
     float calculatePid(const float& error)
@@ -23,6 +22,12 @@ public:
         _lastError = error;
 
         return pid;
+    }
+
+    void reset()
+    {
+        _errorSum = 0;
+        _lastError = 0;
     }
 
 private:

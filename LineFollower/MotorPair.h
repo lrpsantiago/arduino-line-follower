@@ -92,6 +92,23 @@ public:
         _rightMotor->setSpeed(-constrainedSpeed * getRightBalance());
     }
 
+    void stop()
+    {
+        _leftMotor->setSpeed(0);
+        _rightMotor->setSpeed(0);
+    }
+
+    void setDirection(const float& direction)
+    {        
+        auto spdL = direction < 0 ? 1 + direction : 1;
+        auto spdR = direction > 0 ? 1 - direction : 1;
+
+        spdL = constrain(spdL, 0, 1);
+        spdR = constrain(spdR, 0, 1);
+
+        setIndependentSpeed(spdL, spdR);
+    }
+
     void setIndependentSpeed(const float& leftSpeed = 1, const float& rightSpeed = 1)
     {
         auto constrainedSpeedL = constrainSpeed(leftSpeed);
