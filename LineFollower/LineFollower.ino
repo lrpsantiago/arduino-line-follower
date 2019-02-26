@@ -10,20 +10,22 @@
 #define SENSOR_CENTER A2
 #define SENSOR_LEFT A3
 #define SENSOR_LEFT_END A4
-
 #define S_INDEX_LE 0
 #define S_INDEX_L 1
 #define S_INDEX_C 2
 #define S_INDEX_R 3
 #define S_INDEX_RE 4
+#define BUZZER_PIN 7
 
-#define BUZZER_PIN 13
 #define CALIBRATING 0
 #define FOLLOWING_LINE 1
 #define TURNING_L 2
 #define TURNING_R 3
 #define ROTATING_L 5
 #define ROTATING_R 6
+#define STANDBY 6
+#define DEFAULT_THRESHOLD 0.5
+
 
 Led* leds[5];
 PidController* pidControl;
@@ -33,7 +35,7 @@ float stateTime = 5;
 byte state = CALIBRATING;
 byte sensorPins[SENSORS_COUNT] = { SENSOR_LEFT_END, SENSOR_LEFT, SENSOR_CENTER, SENSOR_RIGHT, SENSOR_RIGHT_END };
 LdrSensor* sensors[SENSORS_COUNT];
-float threshold[SENSORS_COUNT] = { 0.5, 0.5, 0.5, 0.5, 0.5 }; //{ 0.88, 0.73, 0.68, 0.52, 0.3 };
+float threshold[SENSORS_COUNT] = { DEFAULT_THRESHOLD, DEFAULT_THRESHOLD, DEFAULT_THRESHOLD, DEFAULT_THRESHOLD, DEFAULT_THRESHOLD }; //{ 0.88, 0.73, 0.68, 0.52, 0.3 };
 bool currentSensorValues[SENSORS_COUNT] = { false, false, true, false, false };
 bool lastSensorValues[SENSORS_COUNT] = { false, false, true, false, false };
 bool programStarts = true;
@@ -41,7 +43,7 @@ float spd = 0.5;
 
 void setup()
 {
-    pidControl = new PidController(1, 0, 0);
+    pidControl = new PidController(4, 0, 2); //(18, 0, 62);
     motors = new MotorPair(1, 2, 3, 4, 5, 6, true);
     motors->setBalance(-0.95);
 
@@ -70,27 +72,7 @@ void loop()
 
     if (state != CALIBRATING)
     {
-        for (auto i = 0; i < SENSORS_COUNT; i++)
-        {
-            auto value = sensors[i]->getNormalizedValue();
-            currentSensorValues[i] = value <= threshold[i];
-
-            Serial.print(currentSensorValues[i] ? "1" : "0");
-            Serial.print(" (");
-            Serial.print(value);
-            Serial.print(")\t");
-
-            if (currentSensorValues[i])
-            {
-                leds[i]->turnOn();
-            }
-            else
-            {
-                leds[i]->turnOff();
-            }
-        }
-
-        Serial.println();
+        readSensors();
     }
 
     switch (state)
@@ -143,29 +125,41 @@ void calibrating()
     }
 }
 
+void readSensors()
+{
+    for (auto i = 0; i < SENSORS_COUNT; i++)
+    {
+        auto value = sensors[i]->getNormalizedValue();
+        currentSensorValues[i] = value <= threshold[i];
+
+        Serial.print(currentSensorValues[i] ? "1" : "0");
+        Serial.print(" (");
+        Serial.print(value);
+        Serial.print(")\t");
+
+        if (currentSensorValues[i])
+        {
+            leds[i]->turnOn();
+        }
+        else
+        {
+            leds[i]->turnOff();
+        }
+    }
+
+    Serial.println();
+}
+
 void followingLine()
 {
     //detect 90º turns
     //detect acute turns
     //detect crossroad
 
-    if (checkCurrentSensors(1, 1, 1, 0, 0))
-    {
-        state = TURNING_L;
-    }
-    else if (checkCurrentSensors(0, 0, 1, 1, 1))
-    {
-        state = TURNING_R;
-    }
-    else
-    {
-        auto error = calculateError();
-        auto normalizedError = float(error) / 4;
-        auto pid = pidControl->calculatePid(normalizedError);
+    auto error = calculateError();
+    auto pid = pidControl->calculatePid(error);
 
-        motors->setDirection(pid);
-    }
-
+    motors->setDirection(pid);
     motors->updateMovement();
 }
 
@@ -244,7 +238,7 @@ bool checkLastSensors(const int& leftEnd, const int& left, const int& center, co
            && lastSensorValues[S_INDEX_RE] == bool(rightEnd);
 }
 
-int calculateError()
+float calculateError()
 {
     if (checkCurrentSensors(0, 0, 1, 0, 0))
     {
@@ -252,34 +246,39 @@ int calculateError()
     }
     else if (checkCurrentSensors(0, 0, 1, 1, 0))
     {
-        return 1;
+        return cos(degToRad(82.5));
     }
     else if (checkCurrentSensors(0, 0, 0, 1, 0))
     {
-        return 2;
+        return cos(degToRad(75));
     }
     else if (checkCurrentSensors(0, 0, 0, 1, 1))
     {
-        return 3;
+        return cos(degToRad(65));
     }
     else if (checkCurrentSensors(0, 0, 0, 0, 1))
     {
-        return 4;
+        return cos(degToRad(55));
     }
     else if (checkCurrentSensors(0, 1, 1, 0, 0))
     {
-        return -1;
+        return cos(degToRad(97.5));
     }
     else if (checkCurrentSensors(0, 1, 0, 0, 0))
     {
-        return -2;
+        return cos(degToRad(105));
     }
     else if (checkCurrentSensors(1, 1, 0, 0, 0))
     {
-        return -3;
+        return cos(degToRad(115));
     }
     else if (checkCurrentSensors(1, 0, 0, 0, 0))
     {
-        return -4;
+        return cos(degToRad(125));
     }
+}
+
+float degToRad(const float& deg)
+{
+    return deg * PI / 180;
 }
