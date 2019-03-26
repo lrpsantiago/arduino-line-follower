@@ -26,7 +26,6 @@
 #define STANDBY 6
 #define DEFAULT_THRESHOLD 0.5
 
-
 Led* leds[5];
 PidController* pidControl;
 MotorPair* motors;
@@ -39,11 +38,11 @@ float threshold[SENSORS_COUNT] = { DEFAULT_THRESHOLD, DEFAULT_THRESHOLD, DEFAULT
 bool currentSensorValues[SENSORS_COUNT] = { false, false, true, false, false };
 bool lastSensorValues[SENSORS_COUNT] = { false, false, true, false, false };
 bool programStarts = true;
-float spd = 0.5;
+float spd = 1;
 
 void setup()
 {
-    pidControl = new PidController(4, 0, 2); //(18, 0, 62);
+    pidControl = new PidController(16, 1, 32); //(18, 0, 62);
     motors = new MotorPair(1, 2, 3, 4, 5, 6, true);
     motors->setBalance(-0.95);
 
@@ -107,7 +106,7 @@ void calibrating()
 
     for (auto i = 0; i < SENSORS_COUNT; i++)
     {
-        auto value = sensors[i]->getValue();
+        auto value = sensors[i]->getRawValue();
         sensors[i]->calibrate(value);
     }
 
@@ -129,7 +128,9 @@ void readSensors()
 {
     for (auto i = 0; i < SENSORS_COUNT; i++)
     {
-        auto value = sensors[i]->getNormalizedValue();
+        sensors[i]->update();
+        
+        auto value = sensors[i]->getRawValue();
         currentSensorValues[i] = value <= threshold[i];
 
         Serial.print(currentSensorValues[i] ? "1" : "0");
@@ -150,17 +151,37 @@ void readSensors()
     Serial.println();
 }
 
+void standby()
+{
+    readSensors();
+}
+
 void followingLine()
 {
     //detect 90º turns
     //detect acute turns
     //detect crossroad
 
-    auto error = calculateError();
-    auto pid = pidControl->calculatePid(error);
+    if (checkCurrentSensors(0, 0, 1, 1, 1)
+        || checkCurrentSensors(0, 1, 1, 1, 1))
+    {
+        stateTime = 0.125;
+        state = ROTATING_R;
+    }
+    else if (checkCurrentSensors(1, 1, 1, 0, 0)
+             || checkCurrentSensors(1, 1, 1, 1, 0))
+    {
+        stateTime = 0.125;
+        state = ROTATING_L;
+    }
+    else
+    {
+        auto error = calculateError() / cos(degToRad(55));
+        auto pid = pidControl->calculatePid(error);
 
-    motors->setDirection(pid);
-    motors->updateMovement();
+        motors->setDirection(pid);
+        motors->updateMovement();
+    }
 }
 
 void turningLeft()
@@ -193,31 +214,45 @@ void turningRight()
 
 void rotatingLeft()
 {
-    if (checkCurrentSensors(0, 0, 1, 0, 0)
-        || checkCurrentSensors(0, 0, 0, 1, 0)
-        || checkCurrentSensors(0, 1, 0, 0, 0))
+    if (stateTime > 0)
     {
-        state = FOLLOWING_LINE;
-        return;
+        motors->forward();
     }
+    else
+    {
+        if (currentSensorValues[S_INDEX_L]
+            || currentSensorValues[S_INDEX_C]
+            || currentSensorValues[S_INDEX_R])
+        {
+            state = FOLLOWING_LINE;
+            return;
+        }
 
-    motors->rotateLeft(spd);
-    motors->updateMovement();
+        motors->rotateLeft(0.5);
+        motors->updateMovement();
+    }
 }
 
 
 void rotatingRight()
 {
-    if (checkCurrentSensors(0, 0, 1, 0, 0)
-        || checkCurrentSensors(0, 0, 0, 1, 0)
-        || checkCurrentSensors(0, 1, 0, 0, 0))
+    if (stateTime > 0)
     {
-        state = FOLLOWING_LINE;
-        return;
+        motors->forward();
     }
+    else
+    {
+        if (currentSensorValues[S_INDEX_L]
+            || currentSensorValues[S_INDEX_C]
+            || currentSensorValues[S_INDEX_R])
+        {
+            state = FOLLOWING_LINE;
+            return;
+        }
 
-    motors->rotateRight(spd);
-    motors->updateMovement();
+        motors->rotateRight(0.5);
+        motors->updateMovement();
+    }
 }
 
 bool checkCurrentSensors(const int& leftEnd, const int& left, const int& center, const int& right, const int& rightEnd)
