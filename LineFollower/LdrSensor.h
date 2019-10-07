@@ -52,6 +52,11 @@ public:
         return _smoothedValue;
     }
 
+    Calibration* getCalibration() const
+    {
+        return _calibration;
+    }
+
     float getNormalizedValue() const
     {
         auto value = _smoothedValue;
@@ -60,10 +65,10 @@ public:
         return constrain(normalizedValue, 0, 1);
     }
 
-    void calibrate(const int& rawValue)
+    void calibrate()
     {
-        _calibration->setMin(rawValue);
-        _calibration->setMax(rawValue);
+        auto rawValue = getRawValue();
+        _calibration->calibrate(rawValue);
     }
 
 private:

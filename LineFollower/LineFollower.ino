@@ -1,6 +1,6 @@
 #include <EEPROM.h>
 #include "MotorPair.h"
-#include "LdrSensor.h"
+#include "SensorArray.h"
 #include "PidController.h"
 #include "Led.h"
 
@@ -106,8 +106,7 @@ void calibrating()
 
     for (auto i = 0; i < SENSORS_COUNT; i++)
     {
-        auto value = sensors[i]->getRawValue();
-        sensors[i]->calibrate(value);
+        sensors[i]->calibrate();
     }
 
     if (stateTime <= 0)
@@ -120,6 +119,31 @@ void calibrating()
         digitalWrite(BUZZER_PIN, HIGH);
         delay(100);
         digitalWrite(BUZZER_PIN, LOW);
+
+        auto minRange = 0;
+
+        for (int i = 0; i < SENSORS_COUNT; i++)
+        {
+            auto calibration = sensors[i]->getCalibration();
+            auto range = calibration->getRange();
+
+            if (range < minRange)
+            {
+                minRange = range;
+            }
+        }
+
+        for (auto s : sensors)
+        {
+            auto calibration = s->getCalibration();
+            auto median = calibration->getNormalizedValue(0.5f);
+            auto max = median + int(float(minRange) / 2);
+            auto min = median - int(float(minRange) / 2);
+
+            calibration->setMax(max);
+            calibration->setMin(min);
+        }
+        
         state = FOLLOWING_LINE;
     }
 }
@@ -130,13 +154,15 @@ void readSensors()
     {
         sensors[i]->update();
         
-        auto value = sensors[i]->getRawValue();
+        auto value = sensors[i]->getNormalizedValue();
         currentSensorValues[i] = value <= threshold[i];
 
-        Serial.print(currentSensorValues[i] ? "1" : "0");
-        Serial.print(" (");
-        Serial.print(value);
-        Serial.print(")\t");
+        //Serial.print(currentSensorValues[i] ? "1" : "0");
+        //Serial.print(" (");
+        Serial.print(value*1000);
+        Serial.print(" ");
+        
+        //Serial.print(")\t");
 
         if (currentSensorValues[i])
         {

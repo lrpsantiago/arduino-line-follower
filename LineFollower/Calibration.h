@@ -33,22 +33,25 @@ public:
 
     void setMin(const int& value)
     {
-        if (value >= _min)
-        {
-            return;
-        }
-
         _min = value;
     }
 
     void setMax(const int& value)
     {
-        if (value <= _max)
+        _max = value;
+    }
+
+    void calibrate(const int& value)
+    {
+        if (value < _min)
         {
-            return;
+            _min = value;
         }
 
-        _max = value;
+        if (value > _max)
+        {
+            _max = value;
+        }
     }
 
     void reset()
